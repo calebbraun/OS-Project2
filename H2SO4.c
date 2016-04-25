@@ -21,7 +21,9 @@ void* oxygen(void* x) {
   printf("oxygen produced\n");
   fflush(stdout);
 
+  // Tell oxy_sem that there's one more O atom available
   sem_post(oxy_sem);
+
   if (*oxy_sem < 5) {
     sem_post(mol_sem);
   }
@@ -32,11 +34,9 @@ void* oxygen(void* x) {
     fflush(stdout);
   }
 
-  // }
-  //
   // printf("oxygen leaving \n");
   // fflush(stdout);
-  // return (void*)0;
+  return (void*)0;
 }
 
 void* hydrogen(void* x) {
@@ -44,7 +44,9 @@ void* hydrogen(void* x) {
   fflush(stdout);
 
   sem_post(hydro_sem);
-  // int wait = sem_wait(moleculebuffer);
+  if (*hydro_sem < 3) {
+    sem_post(mol_sem);
+  }
 
   printf("hydrogen leaving \n");
   fflush(stdout);
@@ -55,18 +57,10 @@ void* sulfur(void* x) {
   printf("sulfur produced\n");
   fflush(stdout);
 
-  int h_err1 = sem_wait(hydro_sem);
-  int h_err2 = sem_wait(hydro_sem);
-  printf("hydrogens made!\n");
-  fflush(stdout);
-  int ox_err1 = sem_wait(oxy_sem);
-  int ox_err2 = sem_wait(oxy_sem);
-  int ox_err3 = sem_wait(oxy_sem);
-  int ox_err4 = sem_wait(oxy_sem);
-
-  if (h_err1 == -1 || h_err2 == -1 || ox_err1 == -1 || ox_err2 == -1 ||
-      ox_err3 == -1 || ox_err4 == -1)
-    printf("error on oxygen wait for hydro_sem, error # %d\n", errno);
+  sem_post(sulf_sem);
+  if (*sulf_sem < 2) {
+    sem_post(mol_sem);
+  }
 
   // produce a water molecule
   printf("\n*** Made H2SO4 Molecule! ***\n\n");
