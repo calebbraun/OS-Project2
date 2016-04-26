@@ -11,15 +11,21 @@
 #include <errno.h>
 #include "H2SO4.h"
 
+// Semaphores for allowing only certain number of atoms to combine as H2SO4
 sem_t* mol_oxy;
 sem_t* mol_hydro;
 sem_t* mol_sulf;
 
-sem_t* mol_sem;  // Indicates whether the atoms are allowed to leave
+// Lock to prevent atoms from leaving
+sem_t* mol_sem;
+
+// Lock on our global counter
 sem_t* sum_lock;
 
+// Global counter to keep track of wheter we have enough atoms
 int mol_sum;
 
+// Function representing one oxygen atom
 void* oxygen(void* x) {
   printf("oxygen produced\n");
   fflush(stdout);
@@ -27,33 +33,40 @@ void* oxygen(void* x) {
   // Allows the first four oxygens to go through
   sem_wait(mol_oxy);
 
-  // Aquires sum_lock in order to increment mol_sum
+  // Aquires sum_lock and increments the number of atoms ready to combine
   sem_wait(sum_lock);
   mol_sum++;
   sem_post(sum_lock);
 
-  printf("O Ready for Formation: %d\n", mol_sum);
-  fflush(stdout);
+  // printf("O Ready for Formation: %d\n", mol_sum);
+  // fflush(stdout);
 
-  // Aquires sum_lcok in order to check it and maybe change its value
+  // Aquires sum_lock in order to check if we can build the molecule
   sem_wait(sum_lock);
   if (mol_sum == 7) {
-    sem_post(mol_sem);  // Either one or zero
+    sem_post(mol_sem);  // Allow atoms to leave
     printf("\n*** Made H2SO4 Molecule! ***\n\n");
     fflush(stdout);
     mol_sum = 0;
   }
   sem_post(sum_lock);
 
-  sem_wait(mol_sem);  // Waits for last atom in molecule
-  sem_post(mol_sem);  // Increments to allow other atoms to leave
+  // Waits until the molecule has 7 atoms
+  sem_wait(mol_sem);
 
+  // Increments to allow other atoms to leave
+  sem_post(mol_sem);
+
+  // Allows next atom to get ready to build next molecule
   sem_post(mol_oxy);
+
+  // Leave and return
   printf("oxygen leaving \n");
   fflush(stdout);
   return (void*)0;
 }
 
+// Function representing one hydrogen atom
 void* hydrogen(void* x) {
   printf("hydrogen produced\n");
   fflush(stdout);
@@ -64,8 +77,8 @@ void* hydrogen(void* x) {
   mol_sum++;
   sem_post(sum_lock);
 
-  printf("H Ready for Formation: %d\n", mol_sum);
-  fflush(stdout);
+  // printf("H Ready for Formation: %d\n", mol_sum);
+  // fflush(stdout);
 
   sem_wait(sum_lock);
   if (mol_sum == 7) {
@@ -95,8 +108,8 @@ void* sulfur(void* x) {
   mol_sum++;
   sem_post(sum_lock);
 
-  printf("S Ready for Formation: %d\n", mol_sum);
-  fflush(stdout);
+  // printf("S Ready for Formation: %d\n", mol_sum);
+  // fflush(stdout);
 
   sem_wait(sum_lock);
   if (mol_sum == 7) {
