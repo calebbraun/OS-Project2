@@ -7,6 +7,11 @@
 sem_t* start_crossing_sem;
 sem_t* signal_start_sem;
 
+int boat_location = 0;  // 0 for Oahu, 1 for Molokai
+int children_O;
+int children_M;
+int adults_O;
+
 void* child(void*);
 void* adult(void*);
 void initSynch();
@@ -37,13 +42,18 @@ int main(int argc, char const* argv[]) {
   // can start crossing
   for (size_t j = 0; j < total; j++) {
     sem_wait(start_crossing_sem);
-    printf("Person reported ready.\n");
-    fflush(stdout);
   }
+  printf("Everyone reported ready, signaling to start.\n");
+  fflush(stdout);
   sem_post(signal_start_sem);
 
   //  Wait until everyone has crossed before exiting
   // ^ Use semaphore
+
+  // join all threads before letting main exit
+  for (int i = 0; i < total; i++) {
+    pthread_join(people[i], NULL);
+  }
 
   return 0;
 }
@@ -58,6 +68,8 @@ void* child(void* x) {
   printf("Child – arrived on Oahu.\n");
   fflush(stdout);
 
+  int island = 0;  // 0 for Oahu, 1 for Molokai
+
   return (void*)0;
 }
 
@@ -70,6 +82,9 @@ void* adult(void* x) {
   sem_post(signal_start_sem);
   printf("Adult – arrived on Oahu.\n");
   fflush(stdout);
+
+  int island = 0;  // 0 for Oahu, 1 for Molokai
+  adults_O++;
 
   return (void*)0;
 }
