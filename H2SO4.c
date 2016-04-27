@@ -16,115 +16,168 @@ sem_t* mol_oxy;
 sem_t* mol_hydro;
 sem_t* mol_sulf;
 
+sem_t* hydrogen_left;
+sem_t* sulfur_left;
+
 // Lock to prevent atoms from leaving
 sem_t* mol_sem;
 
 // Lock on our global counter
 sem_t* sum_lock;
 
-// Global counter to keep track of wheter we have enough atoms
-int mol_sum;
+// Global counter to keep track of whether we have enough atoms
+int mol_sum = 0;
 
 // Function representing one oxygen atom
 void* oxygen(void* x) {
   printf("oxygen produced\n");
   fflush(stdout);
 
+  int builtMolecule = 0;  // False
+  int molNum = 0;
+
   // Allows the first four oxygens to go through
   sem_wait(mol_oxy);
 
-  // Aquires sum_lock and increments the number of atoms ready to combine
+  // =================== Aquires sum_lock ===================
   sem_wait(sum_lock);
   mol_sum++;
-  sem_post(sum_lock);
-
-  // printf("O Ready for Formation: %d\n", mol_sum);
-  // fflush(stdout);
-
-  // Aquires sum_lock in order to check if we can build the molecule
-  sem_wait(sum_lock);
+  molNum = mol_sum;
+  // Check if we can build the molecule
   if (mol_sum == 7) {
     sem_post(mol_sem);  // Allow atoms to leave
     printf("\n*** Made H2SO4 Molecule! ***\n\n");
     fflush(stdout);
+    builtMolecule++;
     mol_sum = 0;
   }
   sem_post(sum_lock);
+  // =================== Returns sum_lock ===================
 
   // Waits until the molecule has 7 atoms
   sem_wait(mol_sem);
 
   // Increments to allow other atoms to leave
-  sem_post(mol_sem);
+  if (builtMolecule != 1) {
+    sem_post(mol_sem);
+  }
 
-  // Allows next atom to get ready to build next molecule
-  sem_post(mol_oxy);
+  // sem_wait(sulfur_left);
+
+  if (builtMolecule == 1) {
+    // Refill the buffers
+    sem_post(mol_hydro);
+    sem_post(mol_hydro);
+    sem_post(mol_sulf);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+  }
 
   // Leave and return
-  printf("oxygen leaving \n");
+  printf("oxygen %d leaving \n", molNum);
   fflush(stdout);
   return (void*)0;
 }
 
 // Function representing one hydrogen atom
 void* hydrogen(void* x) {
+  int builtMolecule = 0;
+  int molNum = 0;
+
   printf("hydrogen produced\n");
   fflush(stdout);
 
   sem_wait(mol_hydro);  // 2 down to 0
 
+  // =================== Aquires sum_lock ===================
   sem_wait(sum_lock);
   mol_sum++;
-  sem_post(sum_lock);
-
-  // printf("H Ready for Formation: %d\n", mol_sum);
-  // fflush(stdout);
-
-  sem_wait(sum_lock);
+  molNum = mol_sum;
+  // Check if we can build the molecule
   if (mol_sum == 7) {
-    sem_post(mol_sem);  // Either one or zero
+    sem_post(mol_sem);  // Allow atoms to leave
     printf("\n*** Made H2SO4 Molecule! ***\n\n");
     fflush(stdout);
+    builtMolecule++;
     mol_sum = 0;
   }
   sem_post(sum_lock);
+  // =================== Returns sum_lock ===================
 
   sem_wait(mol_sem);  // Waits for last atom in molecule
-  sem_post(mol_sem);  // Increments to allow other atoms to leave
 
-  sem_post(mol_hydro);
-  printf("hydrogen leaving \n");
+  // Increments to allow other atoms to leave
+  if (builtMolecule != 1) {
+    sem_post(mol_sem);
+  }
+
+  // sem_post(hydrogen_left);
+
+  if (builtMolecule == 1) {
+    // Refill the buffers
+    sem_post(mol_hydro);
+    sem_post(mol_hydro);
+    sem_post(mol_sulf);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+  }
+
+  printf("hydrogen %d leaving \n", molNum);
   fflush(stdout);
   return (void*)0;
 }
 
 void* sulfur(void* x) {
+  int builtMolecule = 0;
+  int molNum = 0;
+
   printf("sulfur produced\n");
   fflush(stdout);
 
   sem_wait(mol_sulf);  // 1 down to 0
 
+  // =================== Aquires sum_lock ===================
   sem_wait(sum_lock);
   mol_sum++;
-  sem_post(sum_lock);
-
-  // printf("S Ready for Formation: %d\n", mol_sum);
-  // fflush(stdout);
-
-  sem_wait(sum_lock);
+  molNum = mol_sum;
+  // Check if we can build the molecule
   if (mol_sum == 7) {
-    sem_post(mol_sem);  // Either one or zero
+    sem_post(mol_sem);  // Allow atoms to leave
     printf("\n*** Made H2SO4 Molecule! ***\n\n");
     fflush(stdout);
+    builtMolecule++;
     mol_sum = 0;
   }
   sem_post(sum_lock);
+  // =================== Returns sum_lock ===================
 
   sem_wait(mol_sem);  // Waits for last atom in molecule
-  sem_post(mol_sem);  // Increments to allow other atoms to leave
 
-  sem_post(mol_sulf);
-  printf("sulfur leaving \n");
+  // Increments to allow other atoms to leave
+  if (builtMolecule != 1) {
+    sem_post(mol_sem);
+  }
+
+  // sem_wait(hydrogen_left);
+  // sem_wait(hydrogen_left);
+  sem_post(sulfur_left);
+
+  if (builtMolecule == 1) {
+    // Refill the buffers
+    sem_post(mol_hydro);
+    sem_post(mol_hydro);
+    sem_post(mol_sulf);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+    sem_post(mol_oxy);
+  }
+
+  printf("sulfur %d leaving \n", molNum);
   fflush(stdout);
   return (void*)0;
 }
@@ -201,6 +254,34 @@ void openSems() {
       exit(1);
     }
   }
+
+  hydrogen_left = sem_open("hybye", O_CREAT | O_EXCL, 0466, 0);
+  while (hydrogen_left == SEM_FAILED) {
+    if (errno == EEXIST) {
+      printf("semaphore hybye already exists, unlinking and reopening\n");
+      fflush(stdout);
+      sem_unlink("hybye");
+      hydrogen_left = sem_open("hybye", O_CREAT | O_EXCL, 0466, 0);
+    } else {
+      printf("semaphore could not be opened, error # %d\n", errno);
+      fflush(stdout);
+      exit(1);
+    }
+  }
+
+  sulfur_left = sem_open("sybye", O_CREAT | O_EXCL, 0466, 0);
+  while (sulfur_left == SEM_FAILED) {
+    if (errno == EEXIST) {
+      printf("semaphore sybye already exists, unlinking and reopening\n");
+      fflush(stdout);
+      sem_unlink("sybye");
+      sulfur_left = sem_open("sybye", O_CREAT | O_EXCL, 0466, 0);
+    } else {
+      printf("semaphore could not be opened, error # %d\n", errno);
+      fflush(stdout);
+      exit(1);
+    }
+  }
 }
 
 void closeSems() {
@@ -220,4 +301,10 @@ void closeSems() {
 
   sem_close(sum_lock);
   sem_unlink("sumlock\n");
+
+  sem_close(hydrogen_left);
+  sem_unlink("hybye\n");
+
+  sem_close(sulfur_left);
+  sem_unlink("sybye\n");
 }
