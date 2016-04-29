@@ -2,6 +2,7 @@
  * Project 2
  * Authors: Caleb Braun and Reilly Hallstrom
  * 4/27/2016
+ * A C program that builds H2SO4 molecules using separate threads
  */
 
 #include <stdio.h>
@@ -16,6 +17,7 @@ sem_t* mol_oxy;
 sem_t* mol_hydro;
 sem_t* mol_sulf;
 
+// Semaphores to make the threads leave in correct order
 sem_t* hydrogen_left;
 sem_t* sulfur_left;
 sem_t* sulfur_lock;
@@ -63,8 +65,9 @@ void* oxygen(void* x) {
     sem_post(mol_sem);
   }
 
+  // If it built the molecule refill the buffers allowing
+  // other atoms to be make an molecule
   if (builtMolecule == 1) {
-    // Refill the buffers
     sem_post(mol_hydro);
     sem_post(mol_hydro);
     sem_post(mol_sulf);
@@ -74,6 +77,7 @@ void* oxygen(void* x) {
     sem_post(mol_oxy);
   }
 
+  // wait until one sulfur has left before leaving
   sem_wait(sulfur_left);
 
   // Leave and return
@@ -114,9 +118,8 @@ void* hydrogen(void* x) {
     sem_post(mol_sem);
   }
 
-
+  // if this atom built a molecule then refill the buffers
   if (builtMolecule == 1) {
-    // Refill the buffers
     sem_post(mol_hydro);
     sem_post(mol_hydro);
     sem_post(mol_sulf);
@@ -126,14 +129,16 @@ void* hydrogen(void* x) {
     sem_post(mol_oxy);
   }
 
+  // Let sulfur know a hydrogen has left
   sem_post(hydrogen_left);
 
-
+  // Leave and return
   printf("hydrogen %d leaving \n", molNum);
   fflush(stdout);
   return (void*)0;
 }
 
+// Function representing one sulfur atom
 void* sulfur(void* x) {
   int builtMolecule = 0;
   int molNum = 0;
@@ -165,12 +170,11 @@ void* sulfur(void* x) {
     sem_post(mol_sem);
   }
 
-  // sem_wait(hydrogen_left);
-  // sem_wait(hydrogen_left);
+  // Let oxygen know that a sulfur has left
   sem_post(sulfur_left);
 
+  // if this atom built a molecule then refill the buffers
   if (builtMolecule == 1) {
-    // Refill the buffers
     sem_post(mol_hydro);
     sem_post(mol_hydro);
     sem_post(mol_sulf);
@@ -180,25 +184,23 @@ void* sulfur(void* x) {
     sem_post(mol_oxy);
   }
 
+  // wait for two hydrogen atoms to leave
   sem_wait(hydrogen_left);
   sem_wait(hydrogen_left);
 
-
+  // let 4 oxygen atoms leave
   sem_post(sulfur_left);
   sem_post(sulfur_left);
   sem_post(sulfur_left);
   sem_post(sulfur_left);
 
-
-
+  // leave and return
   printf("sulfur %d leaving \n", molNum);
   fflush(stdout);
   return (void*)0;
 }
 
 void openSems() {
-  printf("open\n");
-
   mol_oxy = sem_open("moloxy", O_CREAT | O_EXCL, 0466, 4);
   while (mol_oxy == SEM_FAILED) {
     if (errno == EEXIST) {
