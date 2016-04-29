@@ -1,10 +1,21 @@
+/*
+Caleb Braun and Reilly Hallstrom
+Project 2
+4/27/16
+
+A program using threads, semaphores, mutexes, and condition
+variables to imitate the classic one-boat problem.  The restrictions for our
+problem are that only one adult, one child, or two children are allowed in
+the boat at a time.  All people must cross from Oahu to Molokai.
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <errno.h>
 
-sem_t* start_crossing_sem;
+sem_t* crossing_signal_sem;
 sem_t* signal_start_sem;
 
 pthread_cond_t signal_adult_embark;
@@ -21,7 +32,7 @@ int boat_location = 0;  // 0 for Oahu, 1 for Molokai
 int children_O;
 int children_M;
 int adults_O;
-int adults;
+int everyoneAcross = 0;
 
 void* child(void*);
 void* adult(void*);
@@ -40,9 +51,6 @@ int main(int argc, char const* argv[]) {
 
   initSynch();
 
-  // for testing
-  adults = numadults;
-
   // Create threads for each person
   pthread_t people[total];
   for (int i = 0; i < numchildren; i++) {
@@ -55,109 +63,109 @@ int main(int argc, char const* argv[]) {
   // Somehow wait until all threads have started and then notify threads they
   // can start crossing
   for (size_t j = 0; j < total; j++) {
-    sem_wait(start_crossing_sem);
+    sem_wait(crossing_signal_sem);
   }
   printf("Everyone reported ready, signaling to start.\n");
   fflush(stdout);
   sem_post(signal_start_sem);
 
-  //  Wait until everyone has crossed before exiting
-  // ^ Use semaphore
-
-  // join all threads before letting main exit
-  for (int i = 0; i < total; i++) {
-    pthread_join(people[i], NULL);
-  }
-
+  sem_wait(crossing_signal_sem);
   return 0;
 }
 
 void* child(void* x) {
   pthread_mutex_lock(&child_lock);
-  int id = children_O++;
+  int name = children_O++;
+
   pthread_mutex_unlock(&child_lock);
 
-  printf("Child #%d – reporting in.\n", id);
+  sem_post(crossing_signal_sem);
+  printf("Child #%d – Ready.\n", name);
   fflush(stdout);
-  sem_post(start_crossing_sem);
 
   sem_wait(signal_start_sem);
   sem_post(signal_start_sem);
-  printf("Child #%d – showing up on Oahu.\n", id);
+
+  printf("Child #%d – showing up on Oahu.\n", name);
   fflush(stdout);
 
   int island = 0;  // 0 for Oahu, 1 for Molokai
-
-  sleep(1);
-  printf("\n\n");
 
   // Master loop – child should always be waiting to help until finished
   while (children_O + adults_O > 0) {
 
     while (island == 0) {
       pthread_mutex_lock(&boat_lock);
-      printf("Child #%d – just aquired lock.\n", id);
-      fflush(stdout);
       // Case 1: The child and the empty boat are on the same island
       if (boat_location == 0 && boat == 0) {
         pthread_mutex_lock(&child_lock);
         if (children_O > 1) {
+          // After changing boat vars we unlock the lock
           boat++;
           pthread_mutex_unlock(&boat_lock);
-          printf("Child #%d – just unlocked lock.\n", id);
-          fflush(stdout);
-          printf("Child #%d – First one on the boat! Waiting until full...\n",
-                 id);
-          fflush(stdout);
+
           pthread_cond_wait(&boat_full_O, &child_lock);
+          printf("Child #%d – Getting into boat on Oahu.\n", name);
+          fflush(stdout);
           printf(
               "\nOAHU _._._._._._ --> \\__C%d__/ --> _._._._._._ MOLOKAI\n\n",
-              id);
-          printf("Child #%d – getting off boat.\n", id);
+              name);
+          printf("Child #%d – Getting out of boat on Molokai.\n", name);
           fflush(stdout);
           // Update state variables
+          pthread_mutex_lock(&boat_lock);
+          boat_location = 1;
+          pthread_mutex_unlock(&boat_lock);
+
           island = 1;
           children_O--;
           children_M++;
           pthread_mutex_unlock(&child_lock);
         } else {
+          // If there is only one child on the island we don't need the boat
+          pthread_mutex_unlock(&child_lock);
           pthread_mutex_unlock(&boat_lock);
-          printf("Child #%d – just unlocked lock.\n", id);
-          fflush(stdout);
+
           pthread_mutex_lock(&adult_lock);
           if (adults_O > 0) {
             pthread_mutex_unlock(&adult_lock);
-            printf("Child #%d – Signal Adult to get on boat.\n", id);
-            fflush(stdout);
             pthread_cond_signal(&signal_adult_embark);
-            printf("Child #%d – waiting to be picked up...\n", id);
-            fflush(stdout);
             pthread_cond_wait(&boat_available_O, &child_lock);
+            pthread_mutex_unlock(&child_lock);
           } else {
             pthread_mutex_unlock(&adult_lock);
-            printf("Child #%d – Last crossing. Let's end this nonsense.\n", id);
+            printf("Child #%d – Getting into boat on Oahu.\n", name);
+            printf(
+                "\nOAHU _._._._._._ --> \\__C%d__/ --> _._._._._._ MOLOKAI\n\n",
+                name);
+            printf("Child #%d – Getting out of boat on Molokai.\n", name);
+            printf("Woohoo! Everyone is across!\n");
             fflush(stdout);
+            everyoneAcross = 1;
+            pthread_cond_broadcast(&boat_available_M);
+            sem_post(crossing_signal_sem);
             return (void*)0;
           }
-          pthread_mutex_unlock(&child_lock);
         }
         // Case 2: The child and the half-full boat are on the same island
       } else if (boat_location == 0 && boat == 1) {
-        pthread_mutex_lock(&child_lock);
-        printf("Child #%d – Last one on the boat! Broadcast full.\n", id);
-        fflush(stdout);
+        // boat_lock is locked before if statement
         boat++;
+        pthread_mutex_unlock(&boat_lock);
+
+        printf("Child #%d – Getting into boat on Oahu.\n", name);
+        fflush(stdout);
         pthread_cond_broadcast(&boat_full_O);
         printf("\nOAHU _._._._._._ --> \\__C%d__/ --> _._._._._._ MOLOKAI\n\n",
-               id);
-        printf("Child #%d – getting off boat.\n", id);
+               name);
+        printf("Child #%d – Getting out of boat on Molokai.\n", name);
         fflush(stdout);
 
-        boat = 0;
+        pthread_mutex_lock(&boat_lock);
         boat_location = 1;
         pthread_mutex_unlock(&boat_lock);
-        printf("Child #%d – just unlocked lock.\n", id);
-        fflush(stdout);
+
+        pthread_mutex_lock(&child_lock);
         island = 1;
         children_O--;
         children_M++;
@@ -165,46 +173,32 @@ void* child(void* x) {
         // Case 3: The child is on the start island and cannot get on the boat.
       } else {
         pthread_mutex_unlock(&boat_lock);
-        printf("Child #%d – just unlocked lock.\n", id);
-        fflush(stdout);
-        printf("Child #%d – waiting for boat availability...\n", id);
-        fflush(stdout);
         pthread_cond_wait(&boat_available_O, &child_lock);
-        printf("Child #%d – Signal recieved!\n", id);
-        fflush(stdout);
+        pthread_mutex_unlock(&child_lock);
       }
-      pthread_mutex_unlock(&boat_lock);
-      printf("Child #%d – just unlocked lock.\n", id);
-      fflush(stdout);
     }
-    pthread_mutex_unlock(&child_lock);
 
     pthread_mutex_lock(&child_lock);
-    printf("Child #%d – just aquired lock.\n", id);
-    fflush(stdout);
     while (island == 1) {
       // Case 4: The child is on Molokai with the empty boat
-      printf("Child #%d – trying to get lock.\n", id);
-      fflush(stdout);
       pthread_mutex_lock(&boat_lock);
-      printf("Child #%d – just aquired lock.\n", id);
-      fflush(stdout);
-      if (boat_location == 1 && boat == 0) {
-        printf("Child #%d – telling everyone the boat is empty.\n", id);
-        fflush(stdout);
-        pthread_cond_signal(&boat_available_M);
-      }
-      pthread_mutex_unlock(&boat_lock);
-      printf("Child #%d – just unlocked lock.\n", id);
-      fflush(stdout);
+      boat--;
 
-      printf("Child #%d – waiting to go back...\n", id);
-      fflush(stdout);
+      if (boat_location == 1 && boat == 0) {
+        pthread_mutex_unlock(&boat_lock);
+        pthread_cond_signal(&boat_available_M);
+      } else {
+        pthread_mutex_unlock(&boat_lock);
+      }
       pthread_cond_wait(&boat_available_M, &child_lock);
-      printf("Child #%d – Getting back on boat!\n", id);
+      if (everyoneAcross == 1) {
+        pthread_mutex_unlock(&child_lock);
+        return (void*)0;
+      }
+      printf("Child #%d – Getting into boat on Molokai.\n", name);
       printf("\nOAHU _._._._._._ <-- \\__C%d__/ <-- _._._._._._ MOLOKAI\n\n",
-             id);
-      printf("Child #%d – getting off boat.\n", id);
+             name);
+      printf("Child #%d – Getting out boat on Oahu.\n", name);
       fflush(stdout);
       island = 0;
       pthread_mutex_lock(&boat_lock);
@@ -221,9 +215,9 @@ void* child(void* x) {
 }
 
 void* adult(void* x) {
-  printf("Adult – reporting in.\n");
+  sem_post(crossing_signal_sem);
+  printf("Adult – Ready.\n");
   fflush(stdout);
-  sem_post(start_crossing_sem);
 
   sem_wait(signal_start_sem);
   sem_post(signal_start_sem);
@@ -235,30 +229,23 @@ void* adult(void* x) {
   adults_O++;
 
   while (island == 0) {
-    printf("Adult – Waiting for boat!\n");
-    fflush(stdout);
     pthread_cond_wait(&signal_adult_embark, &adult_lock);
 
     pthread_mutex_lock(&boat_lock);
-    printf("Adult – Getting on boat!\n");
+    printf("Adult – Getting into boat on Oahu.\n");
     fflush(stdout);
-    boat += 2;
-    pthread_cond_broadcast(&boat_full_O);
     printf("\nOAHU _._._._._._ --> \\__A__/ --> _._._._._._ MOLOKAI\n\n");
     fflush(stdout);
+    printf("Adult – Getting out of boat on Molokai.\n");
+    fflush(stdout);
     island = 1;
-    boat -= 2;
     boat_location = 1;
     adults_O--;
     pthread_mutex_unlock(&boat_lock);
   }
   pthread_mutex_unlock(&adult_lock);
 
-  printf("Adult #%d – getting off boat.\n", adults - adults_O);
-  printf("Adult #%d – Signal child to get on boat. #chill\n",
-         adults - adults_O);
-  fflush(stdout);
-  pthread_cond_broadcast(&boat_available_M);
+  pthread_cond_signal(&boat_available_M);
   return (void*)0;
 }
 
@@ -273,13 +260,13 @@ void initSynch() {
   pthread_mutex_init(&child_lock, NULL);
   pthread_mutex_init(&boat_lock, NULL);
 
-  start_crossing_sem = sem_open("startsem", O_CREAT | O_EXCL, 0466, 0);
-  while (start_crossing_sem == SEM_FAILED) {
+  crossing_signal_sem = sem_open("startsem", O_CREAT | O_EXCL, 0466, 0);
+  while (crossing_signal_sem == SEM_FAILED) {
     if (errno == EEXIST) {
       printf("semaphore startsem already exists, unlinking and reopening\n");
       fflush(stdout);
       sem_unlink("startsem");
-      start_crossing_sem = sem_open("startsem", O_CREAT | O_EXCL, 0466, 0);
+      crossing_signal_sem = sem_open("startsem", O_CREAT | O_EXCL, 0466, 0);
     } else {
       printf("semaphore could not be opened, error # %d\n", errno);
       fflush(stdout);
