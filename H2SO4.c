@@ -18,6 +18,7 @@ sem_t* mol_sulf;
 
 sem_t* hydrogen_left;
 sem_t* sulfur_left;
+sem_t* sulfur_lock;
 
 // Lock to prevent atoms from leaving
 sem_t* mol_sem;
@@ -62,8 +63,6 @@ void* oxygen(void* x) {
     sem_post(mol_sem);
   }
 
-  // sem_wait(sulfur_left);
-
   if (builtMolecule == 1) {
     // Refill the buffers
     sem_post(mol_hydro);
@@ -74,6 +73,8 @@ void* oxygen(void* x) {
     sem_post(mol_oxy);
     sem_post(mol_oxy);
   }
+
+  sem_wait(sulfur_left);
 
   // Leave and return
   printf("oxygen %d leaving \n", molNum);
@@ -113,7 +114,6 @@ void* hydrogen(void* x) {
     sem_post(mol_sem);
   }
 
-  // sem_post(hydrogen_left);
 
   if (builtMolecule == 1) {
     // Refill the buffers
@@ -125,6 +125,9 @@ void* hydrogen(void* x) {
     sem_post(mol_oxy);
     sem_post(mol_oxy);
   }
+
+  sem_post(hydrogen_left);
+
 
   printf("hydrogen %d leaving \n", molNum);
   fflush(stdout);
@@ -176,6 +179,17 @@ void* sulfur(void* x) {
     sem_post(mol_oxy);
     sem_post(mol_oxy);
   }
+
+  sem_wait(hydrogen_left);
+  sem_wait(hydrogen_left);
+
+
+  sem_post(sulfur_left);
+  sem_post(sulfur_left);
+  sem_post(sulfur_left);
+  sem_post(sulfur_left);
+
+
 
   printf("sulfur %d leaving \n", molNum);
   fflush(stdout);
@@ -255,6 +269,20 @@ void openSems() {
     }
   }
 
+  sulfur_lock = sem_open("sulfurlock", O_CREAT | O_EXCL, 0466, 1);
+  while (sulfur_lock == SEM_FAILED) {
+    if (errno == EEXIST) {
+      printf("semaphore sumlock already exists, unlinking and reopening\n");
+      fflush(stdout);
+      sem_unlink("sulfurlock");
+      sulfur_lock = sem_open("sulfurlock", O_CREAT | O_EXCL, 0466, 1);
+    } else {
+      printf("semaphore could not be opened, error # %d\n", errno);
+      fflush(stdout);
+      exit(1);
+    }
+  }
+
   hydrogen_left = sem_open("hybye", O_CREAT | O_EXCL, 0466, 0);
   while (hydrogen_left == SEM_FAILED) {
     if (errno == EEXIST) {
@@ -301,6 +329,9 @@ void closeSems() {
 
   sem_close(sum_lock);
   sem_unlink("sumlock\n");
+
+  sem_close(sulfur_lock);
+  sem_unlink("sulfurlock\n");
 
   sem_close(hydrogen_left);
   sem_unlink("hybye\n");
